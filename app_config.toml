@@ -1,0 +1,12 @@
+[app]
+name = "AI λab"
+version = "0.1.0"
+default_mode = "Main Page"
+verbose = true
+
+[storage]
+models_dir = "artifacts/saved_models"
+pipelines_dir = "artifacts/saved_pipelines"
+images_dir = "images"
+logo = "images/logo.svg"
+log_file = "artifacts/app.log"
