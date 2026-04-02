@@ -88,3 +88,11 @@ streamlit run app.py
 ```
 
 `app.py` is the entrypoint and now includes direct page links to all modules when sidebar navigation is disabled.
+
+
+## New modeling controls
+
+- Classification probability outputs are shown when `predict_proba` is available.
+- Decision-threshold tuning is supported with threshold curves (precision/recall/F1).
+- Confusion matrix normalization is user-selectable (`none`, `true`, `pred`, `all`).
+- Optional stacking ensemble can be enabled from the modeling tab.

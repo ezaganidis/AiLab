@@ -6,8 +6,11 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from sklearn.base import clone
+from sklearn.ensemble import StackingClassifier, StackingRegressor
 from sklearn.inspection import PartialDependenceDisplay, permutation_importance
-from sklearn.metrics import ConfusionMatrixDisplay, f1_score, precision_score, recall_score
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.metrics import (ConfusionMatrixDisplay, f1_score, precision_score, recall_score,
+                             roc_curve)
 from sklearn.model_selection import cross_val_score
 
 from helpers.config import PIPELINES_DIR
@@ -15,8 +18,8 @@ from helpers.data_utils import read_sql_data, read_uploaded_data, split_context
 from helpers.logging_utils import setup_logger
 from helpers.ml_utils import (apply_smote_if_needed, available_scorers, bootstrap_metric, build_feature_pipeline,
                               cv_object, evaluate_metrics, feature_select, get_feature_names, list_saved_pipelines,
-                              load_pipeline, model_candidates, objective_factory, save_model_bundle,
-                              save_pipeline, summary_metric_name, tuning_trials)
+                              load_pipeline, model_candidates, model_doc, objective_factory, param_grids,
+                              save_model_bundle, save_pipeline, summary_metric_name, tuning_trials)
 from helpers.state import initialize_session_state
 from helpers.style import set_app_style
 
@@ -38,7 +41,16 @@ def suggest_solution(error_text: str) -> str:
     return "Try fewer folds/trials, verify target/feature selections, and rerun failed models."
 
 
-def run_training(ctx, metric: str, folds: int, tuning_level: str, imbalance: str, model_names: list[str] | None = None):
+def run_training(
+    ctx,
+    metric: str,
+    folds: int,
+    tuning_level: str,
+    imbalance: str,
+    model_names: list[str] | None = None,
+    use_stacking: bool = False,
+    stacking_base_models: list[str] | None = None,
+):
     x_train = st.session_state.selected_features["x_train"]
     y_train = ctx.y_train
     x_train, y_train = apply_smote_if_needed(x_train, y_train, ctx.task_type == "classification" and imbalance == "smote")
@@ -50,6 +62,7 @@ def run_training(ctx, metric: str, folds: int, tuning_level: str, imbalance: str
 
     rows = []
     failed = []
+    fitted_for_stacking = []
     best_score = -np.inf
     best_model = st.session_state.best_model
     best_name = st.session_state.best_model_name
@@ -58,11 +71,14 @@ def run_training(ctx, metric: str, folds: int, tuning_level: str, imbalance: str
     progress = st.progress(0)
     status = st.empty()
 
-    total = max(1, len(all_models))
-    for idx, (name, base) in enumerate(all_models.items(), start=1):
+    total = max(1, len(all_models) + (1 if use_stacking else 0))
+    current_stage = 0
+
+    for name, base in all_models.items():
+        current_stage += 1
         try:
-            status.info(f"Training stage {idx}/{total}: {name}")
-            logger.info("Training model stage %s/%s: %s", idx, total, name)
+            status.info(f"Training stage {current_stage}/{total}: {name}")
+            logger.info("Training model stage %s/%s: %s", current_stage, total, name)
 
             model = clone(base)
             if ctx.task_type == "classification" and imbalance == "class_weight" and hasattr(model, "class_weight"):
@@ -79,6 +95,7 @@ def run_training(ctx, metric: str, folds: int, tuning_level: str, imbalance: str
 
             cv_scores = cross_val_score(model, x_train, y_train, cv=cv, scoring=metric)
             model.fit(x_train, y_train)
+            fitted_for_stacking.append((name, model))
             in_metrics = evaluate_metrics(model, ctx.task_type, x_train, y_train)
             out_metrics = evaluate_metrics(model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test)
             boot_mean, boot_std = bootstrap_metric(model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test, summary_metric)
@@ -103,14 +120,50 @@ def run_training(ctx, metric: str, folds: int, tuning_level: str, imbalance: str
                 best_model = model
                 best_name = name
 
-            logger.info("Model %s completed successfully", name)
         except Exception as exc:
             err_text = str(exc)
-            solution = suggest_solution(err_text)
+            failed.append({"model": name, "error": err_text, "solution": suggest_solution(err_text)})
             logger.exception("Model %s failed: %s", name, err_text)
-            failed.append({"model": name, "error": err_text, "solution": solution})
 
-        progress.progress(min(1.0, idx / total))
+        progress.progress(min(1.0, current_stage / total))
+
+    if use_stacking:
+        current_stage += 1
+        try:
+            status.info(f"Training stage {current_stage}/{total}: stacking_ensemble")
+            stack_names = stacking_base_models or [n for n, _ in fitted_for_stacking[:3]]
+            estimators = [(n, m) for n, m in fitted_for_stacking if n in stack_names]
+            if len(estimators) >= 2:
+                final_est = LogisticRegression(max_iter=3000) if ctx.task_type == "classification" else LinearRegression()
+                stack_model = StackingClassifier(estimators=estimators, final_estimator=final_est, cv=3) if ctx.task_type == "classification" else StackingRegressor(estimators=estimators, final_estimator=final_est, cv=3)
+                cv_scores = cross_val_score(stack_model, x_train, y_train, cv=cv, scoring=metric)
+                stack_model.fit(x_train, y_train)
+                in_metrics = evaluate_metrics(stack_model, ctx.task_type, x_train, y_train)
+                out_metrics = evaluate_metrics(stack_model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test)
+                boot_mean, boot_std = bootstrap_metric(stack_model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test, summary_metric)
+                out_val = out_metrics.get(summary_metric)
+                rows.append(
+                    {
+                        "model": "stacking_ensemble",
+                        "metric_in_sample_mean_cv": float(cv_scores.mean()),
+                        "metric_in_sample_std_cv": float(cv_scores.std()),
+                        "metric_in_sample_mean_bootstrap": boot_mean,
+                        "metric_in_sample_std_bootstrap": boot_std,
+                        "metric_out_of_sample": float(out_val) if isinstance(out_val, (float, int, np.floating)) else np.nan,
+                        "all_in_sample_metrics": json.dumps(in_metrics),
+                        "all_out_sample_metrics": json.dumps(out_metrics),
+                        "best_params": json.dumps({"estimators": stack_names}),
+                    }
+                )
+                if cv_scores.mean() > best_score:
+                    best_score = float(cv_scores.mean())
+                    best_model = stack_model
+                    best_name = "stacking_ensemble"
+        except Exception as exc:
+            err_text = str(exc)
+            failed.append({"model": "stacking_ensemble", "error": err_text, "solution": suggest_solution(err_text)})
+
+        progress.progress(min(1.0, current_stage / total))
 
     status.success("Training completed")
     return rows, failed, best_model, best_name
@@ -148,6 +201,8 @@ with tabs[0]:
         st.dataframe(st.session_state.raw_df.head(100))
         target = st.selectbox("Target", st.session_state.raw_df.columns.tolist())
         task_type = st.selectbox("Task type", ["classification", "regression"])
+        st.caption("Model documentation")
+        st.json(model_doc(task_type))
         test_size = st.slider("Test size", 0.1, 0.5, 0.2, 0.05)
         random_state = st.number_input("Random state", 0, 9999, 42)
         if st.button("Create split"):
@@ -228,9 +283,11 @@ with tabs[4]:
     folds = st.slider("CV folds", 3, 10, 5)
     tuning_level = st.select_slider("Optuna tuning level", options=["basic", "light", "medium", "heavy", "extreme"])
     imbalance = st.selectbox("Imbalance strategy", ["none", "class_weight", "smote"]) if ctx.task_type == "classification" else "none"
+    use_stacking = st.checkbox("Enable stacking ensemble")
+    selected_stacking_models = st.multiselect("Stacking base models", list(model_candidates(ctx.task_type).keys()), default=list(model_candidates(ctx.task_type).keys())[:3]) if use_stacking else []
 
     if st.button("Run modeling"):
-        rows, failed, best_model, best_name = run_training(ctx, metric, folds, tuning_level, imbalance)
+        rows, failed, best_model, best_name = run_training(ctx, metric, folds, tuning_level, imbalance, use_stacking=use_stacking, stacking_base_models=selected_stacking_models)
         st.session_state.models_summary = pd.DataFrame(rows).sort_values("metric_in_sample_mean_cv", ascending=False)
         st.session_state.best_model = best_model
         st.session_state.best_model_name = best_name
@@ -241,24 +298,6 @@ with tabs[4]:
             st.dataframe(pd.DataFrame(failed))
         else:
             st.success("All models completed successfully.")
-
-    if st.session_state.get("failed_runs"):
-        st.warning("You have failed models from the previous run.")
-        if st.button("Rerun failed models only"):
-            failed_models = [item["model"] for item in st.session_state["failed_runs"]]
-            rows, failed, best_model, best_name = run_training(ctx, metric, folds, tuning_level, imbalance, failed_models)
-            existing = st.session_state.models_summary if st.session_state.models_summary is not None else pd.DataFrame()
-            rerun_df = pd.DataFrame(rows)
-            combined = pd.concat([existing[~existing["model"].isin(failed_models)], rerun_df], ignore_index=True)
-            st.session_state.models_summary = combined.sort_values("metric_in_sample_mean_cv", ascending=False)
-            st.session_state.best_model = best_model if best_model is not None else st.session_state.best_model
-            st.session_state.best_model_name = best_name if best_name is not None else st.session_state.best_model_name
-            st.session_state.failed_runs = failed
-            if failed:
-                st.error("Some failed models still require attention.")
-                st.dataframe(pd.DataFrame(failed))
-            else:
-                st.success("Failed models rerun succeeded.")
 
 if st.session_state.models_summary is None:
     st.stop()
@@ -282,32 +321,62 @@ with tabs[5]:
         y_test = st.session_state.ctx.y_test
         x_test = st.session_state.selected_features["x_test"]
         y_pred = st.session_state.best_model.predict(x_test)
+
+        denominator = st.selectbox("Confusion matrix denominator", ["none", "true", "pred", "all"], index=0)
+        denom_arg = None if denominator == "none" else denominator
         fig_in, ax_in = plt.subplots(figsize=(4, 4))
-        ConfusionMatrixDisplay.from_predictions(y_test, y_pred, normalize=None, ax=ax_in)
+        ConfusionMatrixDisplay.from_predictions(y_test, y_pred, normalize=denom_arg, ax=ax_in)
         st.pyplot(fig_in)
-        fig_pct, ax_pct = plt.subplots(figsize=(4, 4))
-        ConfusionMatrixDisplay.from_predictions(y_test, y_pred, normalize="true", ax=ax_pct)
-        st.pyplot(fig_pct)
 
         labels = sorted(st.session_state.ctx.y_test.unique().tolist())
-        selected_label = st.selectbox("Label-specific metrics", labels, help="Choose the class label to inspect precision/recall/F1 for this specific class.")
+        label_options = sorted(set(labels + [0, 1]))
+        selected_label = st.selectbox("Label-specific metrics", label_options, help="Choose class label for precision/recall/F1.")
 
         y_train_pred = st.session_state.best_model.predict(st.session_state.selected_features["x_train"])
         y_test_pred = st.session_state.best_model.predict(x_test)
+        binary_case = len(labels) == 2 and selected_label in labels
         in_label_metrics = {
-            "precision_label": precision_score(st.session_state.ctx.y_train, y_train_pred, pos_label=selected_label, average="binary", zero_division=0) if len(labels)==2 else precision_score(st.session_state.ctx.y_train, y_train_pred, labels=[selected_label], average="macro", zero_division=0),
-            "recall_label": recall_score(st.session_state.ctx.y_train, y_train_pred, pos_label=selected_label, average="binary", zero_division=0) if len(labels)==2 else recall_score(st.session_state.ctx.y_train, y_train_pred, labels=[selected_label], average="macro", zero_division=0),
-            "f1_label": f1_score(st.session_state.ctx.y_train, y_train_pred, pos_label=selected_label, average="binary", zero_division=0) if len(labels)==2 else f1_score(st.session_state.ctx.y_train, y_train_pred, labels=[selected_label], average="macro", zero_division=0),
+            "precision_label": precision_score(st.session_state.ctx.y_train, y_train_pred, pos_label=selected_label, average="binary", zero_division=0) if binary_case else precision_score(st.session_state.ctx.y_train, y_train_pred, labels=[selected_label], average="macro", zero_division=0),
+            "recall_label": recall_score(st.session_state.ctx.y_train, y_train_pred, pos_label=selected_label, average="binary", zero_division=0) if binary_case else recall_score(st.session_state.ctx.y_train, y_train_pred, labels=[selected_label], average="macro", zero_division=0),
+            "f1_label": f1_score(st.session_state.ctx.y_train, y_train_pred, pos_label=selected_label, average="binary", zero_division=0) if binary_case else f1_score(st.session_state.ctx.y_train, y_train_pred, labels=[selected_label], average="macro", zero_division=0),
         }
         out_label_metrics = {
-            "precision_label": precision_score(y_test, y_test_pred, pos_label=selected_label, average="binary", zero_division=0) if len(labels)==2 else precision_score(y_test, y_test_pred, labels=[selected_label], average="macro", zero_division=0),
-            "recall_label": recall_score(y_test, y_test_pred, pos_label=selected_label, average="binary", zero_division=0) if len(labels)==2 else recall_score(y_test, y_test_pred, labels=[selected_label], average="macro", zero_division=0),
-            "f1_label": f1_score(y_test, y_test_pred, pos_label=selected_label, average="binary", zero_division=0) if len(labels)==2 else f1_score(y_test, y_test_pred, labels=[selected_label], average="macro", zero_division=0),
+            "precision_label": precision_score(y_test, y_test_pred, pos_label=selected_label, average="binary", zero_division=0) if binary_case else precision_score(y_test, y_test_pred, labels=[selected_label], average="macro", zero_division=0),
+            "recall_label": recall_score(y_test, y_test_pred, pos_label=selected_label, average="binary", zero_division=0) if binary_case else recall_score(y_test, y_test_pred, labels=[selected_label], average="macro", zero_division=0),
+            "f1_label": f1_score(y_test, y_test_pred, pos_label=selected_label, average="binary", zero_division=0) if binary_case else f1_score(y_test, y_test_pred, labels=[selected_label], average="macro", zero_division=0),
         }
         st.write(f"In-sample metrics for label: {selected_label}")
         st.json(in_label_metrics)
         st.write(f"Out-of-sample metrics for label: {selected_label}")
         st.json(out_label_metrics)
+
+        if hasattr(st.session_state.best_model, "predict_proba") and binary_case:
+            probs = st.session_state.best_model.predict_proba(x_test)[:, 1]
+            threshold = st.slider("Decision threshold", 0.0, 1.0, 0.5, 0.01)
+            th_preds = (probs >= threshold).astype(int)
+            st.write("Threshold-based metrics")
+            st.json(
+                {
+                    "precision": precision_score(y_test, th_preds, zero_division=0),
+                    "recall": recall_score(y_test, th_preds, zero_division=0),
+                    "f1": f1_score(y_test, th_preds, zero_division=0),
+                }
+            )
+            thresholds = np.linspace(0.01, 0.99, 99)
+            curve = pd.DataFrame(
+                {
+                    "threshold": thresholds,
+                    "precision": [precision_score(y_test, (probs >= t).astype(int), zero_division=0) for t in thresholds],
+                    "recall": [recall_score(y_test, (probs >= t).astype(int), zero_division=0) for t in thresholds],
+                    "f1": [f1_score(y_test, (probs >= t).astype(int), zero_division=0) for t in thresholds],
+                }
+            )
+            st.plotly_chart(px.line(curve, x="threshold", y=["precision", "recall", "f1"], title="Threshold tuning curves"), use_container_width=True)
+            fpr, tpr, _ = roc_curve(y_test, probs)
+            roc_df = pd.DataFrame({"fpr": fpr, "tpr": tpr})
+            st.plotly_chart(px.line(roc_df, x="fpr", y="tpr", title="ROC Curve"), use_container_width=True)
+            prob_df = pd.DataFrame({"probability": probs})
+            st.plotly_chart(px.histogram(prob_df, x="probability", nbins=30, title="Predicted probability distribution"), use_container_width=True)
 
     pipeline_name = st.text_input("Save pipeline as", value="feature_pipeline.joblib")
     if st.button("Save pipeline"):
