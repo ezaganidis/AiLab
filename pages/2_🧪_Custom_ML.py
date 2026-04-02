@@ -271,6 +271,8 @@ with tabs[3]:
         )
         x_test_selected = selector.transform(st.session_state.x_test_ready) if selector is not None else st.session_state.x_test_ready
         st.session_state.selected_features = {"selector": selector, "x_train": x_train_selected, "x_test": x_test_selected}
+        st.session_state.selection_method = method
+        st.session_state.selection_top_k = int(k)
 
 if st.session_state.selected_features is None:
     st.stop()
@@ -285,6 +287,27 @@ with tabs[4]:
     imbalance = st.selectbox("Imbalance strategy", ["none", "class_weight", "smote"]) if ctx.task_type == "classification" else "none"
     use_stacking = st.checkbox("Enable stacking ensemble")
     selected_stacking_models = st.multiselect("Stacking base models", list(model_candidates(ctx.task_type).keys()), default=list(model_candidates(ctx.task_type).keys())[:3]) if use_stacking else []
+
+
+    st.subheader("Training configuration summary")
+    training_summary = {
+        "mode": "Custom ML",
+        "task": ctx.task_type,
+        "target": ctx.target,
+        "train_rows": int(len(ctx.y_train)),
+        "test_rows": int(len(ctx.y_test)),
+        "n_raw_features": int(len(ctx.feature_cols)),
+        "n_engineered_features": int(st.session_state.selected_features["x_train"].shape[1]),
+        "feature_selection_method": st.session_state.get("selection_method", "not-set"),
+        "feature_selection_top_k": st.session_state.get("selection_top_k", "not-set"),
+        "optimization_metric": metric,
+        "cv_folds": int(folds),
+        "optuna_tuning_level": tuning_level,
+        "imbalance_strategy": imbalance,
+        "stacking_enabled": bool(use_stacking),
+        "stacking_base_models": selected_stacking_models,
+    }
+    st.json(training_summary)
 
     if st.button("Run modeling"):
         rows, failed, best_model, best_name = run_training(ctx, metric, folds, tuning_level, imbalance, use_stacking=use_stacking, stacking_base_models=selected_stacking_models)

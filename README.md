@@ -96,3 +96,6 @@ streamlit run app.py
 - Decision-threshold tuning is supported with threshold curves (precision/recall/F1).
 - Confusion matrix normalization is user-selectable (`none`, `true`, `pred`, `all`).
 - Optional stacking ensemble can be enabled from the modeling tab.
+
+
+- Training configuration summary is shown in both Auto ML and Custom ML before running, so users can inspect model characteristics and settings.

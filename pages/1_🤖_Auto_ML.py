@@ -17,6 +17,22 @@ if uploaded is not None:
     target = st.selectbox("Target", df.columns.tolist(), key="automl_target")
     task = st.selectbox("Task", ["classification", "regression"], key="automl_task")
 
+
+    st.subheader("Training configuration")
+    st.json(
+        {
+            "mode": "Auto ML",
+            "task": task,
+            "target": target,
+            "algorithm": "RandomForest (default)",
+            "test_size": 0.2,
+            "random_state": 42,
+            "numeric_imputation": "mean",
+            "categorical_imputation": "most_frequent",
+            "scaling": "standard",
+        }
+    )
+
     if st.button("Run ABSOLUTE MINIMUM"):
         ctx = split_context(df, target, task, test_size=0.2, random_state=42)
         pipe = build_feature_pipeline(ctx.train_df[ctx.feature_cols], "standard", "most_frequent", "mean")
