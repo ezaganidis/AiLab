@@ -1,0 +1,9 @@
+name: streamlit_app_duth
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -r requirements.txt
