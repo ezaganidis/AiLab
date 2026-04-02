@@ -15,12 +15,12 @@ from sklearn.feature_selection import RFE, SelectKBest, f_classif, f_regression,
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, LogisticRegression, Ridge
 from sklearn.metrics import (accuracy_score, balanced_accuracy_score, cohen_kappa_score, explained_variance_score,
-                             f1_score, jaccard_score, log_loss, matthews_corrcoef, max_error,
+                             f1_score, get_scorer_names, jaccard_score, log_loss, matthews_corrcoef, max_error,
                              mean_absolute_error, mean_absolute_percentage_error, mean_gamma_deviance,
                              mean_pinball_loss, mean_poisson_deviance, mean_squared_error,
                              mean_squared_log_error, median_absolute_error, precision_score, r2_score,
                              recall_score, roc_auc_score, top_k_accuracy_score)
-from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score, get_scorer_names
+from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor

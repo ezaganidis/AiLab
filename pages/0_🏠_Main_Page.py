@@ -1,15 +1,29 @@
 import streamlit as st
 
-from helpers.config import LOGO_PATH
+from helpers.config import IMAGES_DIR, LOGO_PATH
+from helpers.navigation import render_top_navigation
 from helpers.state import initialize_session_state
 from helpers.style import set_app_style
 
 initialize_session_state()
 set_app_style()
+render_top_navigation()
 
 st.header("Welcome to AI λab")
-if LOGO_PATH.exists():
-    st.image(str(LOGO_PATH), width=220)
+
+logo_research = IMAGES_DIR / "logo_research_team.svg"
+logo_university = IMAGES_DIR / "logo_university.svg"
+
+c_logo1, c_logo2, c_logo3 = st.columns([1, 2, 2])
+with c_logo1:
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), caption="App Logo", width=170)
+with c_logo2:
+    if logo_research.exists():
+        st.image(str(logo_research), caption="Research Team Logo", use_container_width=True)
+with c_logo3:
+    if logo_university.exists():
+        st.image(str(logo_university), caption="University Logo", use_container_width=True)
 
 c1, c2, c3, c4 = st.columns(4)
 

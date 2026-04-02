@@ -1,12 +1,12 @@
 import logging
 from pathlib import Path
 
-from helpers.config import ARTIFACTS_DIR
+from helpers.config import LOGS_DIR
 
 
 def setup_logger(verbose: bool = True) -> logging.Logger:
-    ARTIFACTS_DIR.mkdir(exist_ok=True)
-    log_path = Path(ARTIFACTS_DIR) / "app.log"
+    LOGS_DIR.mkdir(exist_ok=True)
+    log_path = Path(LOGS_DIR) / "app.log"
 
     logger = logging.getLogger("ai_lab")
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)

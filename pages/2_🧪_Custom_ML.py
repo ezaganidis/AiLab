@@ -20,11 +20,13 @@ from helpers.ml_utils import (apply_smote_if_needed, available_scorers, bootstra
                               cv_object, evaluate_metrics, feature_select, get_feature_names, list_saved_pipelines,
                               load_pipeline, model_candidates, model_doc, objective_factory, param_grids,
                               save_model_bundle, save_pipeline, summary_metric_name, tuning_trials)
+from helpers.navigation import render_top_navigation
 from helpers.state import initialize_session_state
 from helpers.style import set_app_style
 
 initialize_session_state()
 set_app_style()
+render_top_navigation()
 logger = setup_logger(verbose=True)
 
 
@@ -178,10 +180,10 @@ st.header("AI λab — Custom ML")
 tabs = st.tabs(["1) Import & Split", "2) EDA", "3) Feature Engineering", "4) Feature Selection", "5) Modeling", "6) Results", "7) XAI"])
 
 with tabs[0]:
-    source = st.radio("Data source", ["Upload file", "SQL query"], horizontal=True)
+    source = st.radio("Data source", ["Upload file", "SQL query"], horizontal=True, key="custom_source")
     df = None
     if source == "Upload file":
-        file_type = st.selectbox("File type", ["csv", "json", "xlsx"])
+        file_type = st.selectbox("File type", ["csv", "json", "xlsx"], key="custom_file_type")
         uploaded = st.file_uploader("Upload data", type=["csv", "json", "xlsx"])
         if uploaded is not None:
             df = read_uploaded_data(uploaded, file_type)
@@ -199,12 +201,12 @@ with tabs[0]:
 
     if st.session_state.raw_df is not None:
         st.dataframe(st.session_state.raw_df.head(100))
-        target = st.selectbox("Target", st.session_state.raw_df.columns.tolist())
-        task_type = st.selectbox("Task type", ["classification", "regression"])
+        target = st.selectbox("Target", st.session_state.raw_df.columns.tolist(), key="custom_target")
+        task_type = st.selectbox("Task type", ["classification", "regression"], key="custom_task_type")
         st.caption("Model documentation")
         st.json(model_doc(task_type))
-        test_size = st.slider("Test size", 0.1, 0.5, 0.2, 0.05)
-        random_state = st.number_input("Random state", 0, 9999, 42)
+        test_size = st.slider("Test size", 0.1, 0.5, 0.2, 0.05, key="custom_test_size")
+        random_state = st.number_input("Random state", 0, 9999, 42, key="custom_random_state")
         if st.button("Create split"):
             st.session_state.ctx = split_context(st.session_state.raw_df, target, task_type, test_size, int(random_state))
 
@@ -227,9 +229,9 @@ with tabs[2]:
     existing_pipelines = list_saved_pipelines()
     mode = st.radio("Pipeline option", ["Create new pipeline", "Load existing pipeline"], horizontal=True)
     if mode == "Create new pipeline":
-        num_fill = st.selectbox("Numeric NA strategy", ["mean", "median"])
-        cat_fill = st.selectbox("Categorical NA strategy", ["most_frequent", "constant"])
-        scaler = st.selectbox("Scaling", ["standard", "robust"])
+        num_fill = st.selectbox("Numeric NA strategy", ["mean", "median"], key="custom_num_fill")
+        cat_fill = st.selectbox("Categorical NA strategy", ["most_frequent", "constant"], key="custom_cat_fill")
+        scaler = st.selectbox("Scaling", ["standard", "robust"], key="custom_scaler")
         if st.button("Build transformations"):
             ctx = st.session_state.ctx
             pipeline = build_feature_pipeline(ctx.train_df[ctx.feature_cols], scaler, cat_fill, num_fill)
@@ -258,9 +260,9 @@ if st.session_state.feature_pipeline is None:
     st.stop()
 
 with tabs[3]:
-    method = st.selectbox("Selection method", ["manual", "kbest", "mutual_info", "rfe"])
+    method = st.selectbox("Selection method", ["manual", "kbest", "mutual_info", "rfe"], key="custom_selection_method")
     total_feats = st.session_state.x_train_ready.shape[1]
-    k = st.slider("Top-k features", 5, max(5, total_feats), min(25, total_feats))
+    k = st.slider("Top-k features", 5, max(5, total_feats), min(25, total_feats), key="custom_selection_k")
     if st.button("Apply feature selection"):
         x_train_selected, selector = feature_select(
             st.session_state.x_train_ready,
@@ -281,12 +283,12 @@ with tabs[4]:
     ctx = st.session_state.ctx
     scorers = available_scorers(ctx.task_type)
     default_metric = "f1_weighted" if ctx.task_type == "classification" else "neg_root_mean_squared_error"
-    metric = st.selectbox("Optimization metric", scorers, index=scorers.index(default_metric) if default_metric in scorers else 0)
-    folds = st.slider("CV folds", 3, 10, 5)
-    tuning_level = st.select_slider("Optuna tuning level", options=["basic", "light", "medium", "heavy", "extreme"])
-    imbalance = st.selectbox("Imbalance strategy", ["none", "class_weight", "smote"]) if ctx.task_type == "classification" else "none"
-    use_stacking = st.checkbox("Enable stacking ensemble")
-    selected_stacking_models = st.multiselect("Stacking base models", list(model_candidates(ctx.task_type).keys()), default=list(model_candidates(ctx.task_type).keys())[:3]) if use_stacking else []
+    metric = st.selectbox("Optimization metric", scorers, index=scorers.index(default_metric) if default_metric in scorers else 0, key="custom_metric")
+    folds = st.slider("CV folds", 3, 10, 5, key="custom_folds")
+    tuning_level = st.select_slider("Optuna tuning level", options=["basic", "light", "medium", "heavy", "extreme"], key="custom_tuning_level")
+    imbalance = st.selectbox("Imbalance strategy", ["none", "class_weight", "smote"], key="custom_imbalance") if ctx.task_type == "classification" else "none"
+    use_stacking = st.checkbox("Enable stacking ensemble", key="custom_use_stacking")
+    selected_stacking_models = st.multiselect("Stacking base models", list(model_candidates(ctx.task_type).keys()), default=list(model_candidates(ctx.task_type).keys())[:3], key="custom_stacking_models") if use_stacking else []
 
 
     st.subheader("Training configuration summary")

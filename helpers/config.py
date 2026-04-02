@@ -5,7 +5,8 @@ ARTIFACTS_DIR = ROOT_DIR / "artifacts"
 MODELS_DIR = ARTIFACTS_DIR / "saved_models"
 PIPELINES_DIR = ARTIFACTS_DIR / "saved_pipelines"
 IMAGES_DIR = ROOT_DIR / "images"
-LOGO_PATH = IMAGES_DIR / "logo.svg"
+LOGS_DIR = ROOT_DIR / "logs"
+LOGO_PATH = IMAGES_DIR / "logo_app.svg"
 
 
 def ensure_app_dirs() -> None:
@@ -13,3 +14,4 @@ def ensure_app_dirs() -> None:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     PIPELINES_DIR.mkdir(parents=True, exist_ok=True)
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)

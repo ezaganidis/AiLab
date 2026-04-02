@@ -32,7 +32,9 @@ The app initializes and keeps workflow state in `st.session_state`, so users can
 
 - `artifacts/saved_models` for model bundles
 - `artifacts/saved_pipelines` for reusable feature pipelines
-- `images/logo.svg` for app branding
+- `images/logo_app.svg` for app branding
+- `images/logo_research_team.svg` for research team branding
+- `images/logo_university.svg` for university branding
 
 ## Run locally
 
@@ -99,3 +101,9 @@ streamlit run app.py
 
 
 - Training configuration summary is shown in both Auto ML and Custom ML before running, so users can inspect model characteristics and settings.
+
+
+- Top navigation bar (Main / Auto ML / Custom ML / Predict) is rendered on every page and remains visible while navigating.
+- Logs are stored in `logs/app.log`.
+
+- All major widget selections persist in `st.session_state` (with stable keys) across page/tab navigation.

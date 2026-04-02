@@ -8,5 +8,5 @@ verbose = true
 models_dir = "artifacts/saved_models"
 pipelines_dir = "artifacts/saved_pipelines"
 images_dir = "images"
-logo = "images/logo.svg"
-log_file = "artifacts/app.log"
+logo = "images/logo_app.svg"
+log_file = "logs/app.log"

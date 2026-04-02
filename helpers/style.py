@@ -38,8 +38,8 @@ def add_fixed_footer(text: str = "Developed by Emmanouil Zaganidis") -> None:
 
 
 def set_app_style() -> None:
-    logo_path = Path("images") / "logo.svg"
-    icon_path = Path("images") / "logo.svg"
+    logo_path = Path("images") / "logo_app.svg"
+    icon_path = Path("images") / "logo_app.svg"
 
     if hasattr(st, "logo") and logo_path.exists():
         st.logo(
