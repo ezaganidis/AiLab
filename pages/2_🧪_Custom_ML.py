@@ -5,28 +5,27 @@ import optuna
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from scipy import sparse
 from sklearn.base import clone
 from sklearn.ensemble import StackingClassifier, StackingRegressor
 from sklearn.inspection import PartialDependenceDisplay, permutation_importance
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.metrics import (ConfusionMatrixDisplay, f1_score, precision_score, recall_score,
+from sklearn.metrics import (ConfusionMatrixDisplay, f1_score, get_scorer, precision_score, recall_score,
                              roc_curve)
 from sklearn.model_selection import cross_val_score
 
 from helpers.config import PIPELINES_DIR
 from helpers.data_utils import read_sql_data, read_uploaded_data, split_context
 from helpers.logging_utils import setup_logger
-from helpers.ml_utils import (apply_smote_if_needed, available_scorers, bootstrap_metric, build_feature_pipeline,
-                              cv_object, evaluate_metrics, feature_select, get_feature_names, list_saved_pipelines,
+from helpers.ml_utils import (apply_smote_if_needed, available_scorers, build_feature_pipeline, cv_object,
+                              evaluate_metrics, feature_select, get_feature_names, list_saved_pipelines,
                               load_pipeline, model_candidates, model_doc, objective_factory, param_grids,
-                              save_model_bundle, save_pipeline, summary_metric_name, tuning_trials)
-from helpers.navigation import render_top_navigation
+                              save_model_bundle, save_pipeline, tuning_trials)
 from helpers.state import initialize_session_state
 from helpers.style import set_app_style
 
 initialize_session_state()
 set_app_style()
-render_top_navigation()
 logger = setup_logger(verbose=True)
 
 
@@ -65,10 +64,11 @@ def run_training(
     rows = []
     failed = []
     fitted_for_stacking = []
+    trained_models = {}
     best_score = -np.inf
     best_model = st.session_state.best_model
     best_name = st.session_state.best_model_name
-    summary_metric = summary_metric_name(ctx.task_type)
+    scorer = get_scorer(metric)
 
     progress = st.progress(0)
     status = st.empty()
@@ -97,11 +97,17 @@ def run_training(
 
             cv_scores = cross_val_score(model, x_train, y_train, cv=cv, scoring=metric)
             model.fit(x_train, y_train)
+            trained_models[name] = model
             fitted_for_stacking.append((name, model))
             in_metrics = evaluate_metrics(model, ctx.task_type, x_train, y_train)
             out_metrics = evaluate_metrics(model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test)
-            boot_mean, boot_std = bootstrap_metric(model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test, summary_metric)
-            out_val = out_metrics.get(summary_metric)
+            out_val = float(scorer(model, st.session_state.selected_features["x_test"], ctx.y_test))
+            boot_vals = []
+            n_obs = len(ctx.y_test)
+            for _ in range(30):
+                bs_idx = np.random.randint(0, n_obs, n_obs)
+                boot_vals.append(float(scorer(model, st.session_state.selected_features["x_test"][bs_idx], ctx.y_test.iloc[bs_idx])))
+            boot_mean, boot_std = float(np.mean(boot_vals)), float(np.std(boot_vals))
 
             rows.append(
                 {
@@ -110,7 +116,7 @@ def run_training(
                     "metric_in_sample_std_cv": float(cv_scores.std()),
                     "metric_in_sample_mean_bootstrap": boot_mean,
                     "metric_in_sample_std_bootstrap": boot_std,
-                    "metric_out_of_sample": float(out_val) if isinstance(out_val, (float, int, np.floating)) else np.nan,
+                    "metric_out_of_sample": out_val,
                     "all_in_sample_metrics": json.dumps(in_metrics),
                     "all_out_sample_metrics": json.dumps(out_metrics),
                     "best_params": json.dumps(study.best_params),
@@ -142,8 +148,13 @@ def run_training(
                 stack_model.fit(x_train, y_train)
                 in_metrics = evaluate_metrics(stack_model, ctx.task_type, x_train, y_train)
                 out_metrics = evaluate_metrics(stack_model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test)
-                boot_mean, boot_std = bootstrap_metric(stack_model, ctx.task_type, st.session_state.selected_features["x_test"], ctx.y_test, summary_metric)
-                out_val = out_metrics.get(summary_metric)
+                out_val = float(scorer(stack_model, st.session_state.selected_features["x_test"], ctx.y_test))
+                boot_vals = []
+                n_obs = len(ctx.y_test)
+                for _ in range(30):
+                    bs_idx = np.random.randint(0, n_obs, n_obs)
+                    boot_vals.append(float(scorer(stack_model, st.session_state.selected_features["x_test"][bs_idx], ctx.y_test.iloc[bs_idx])))
+                boot_mean, boot_std = float(np.mean(boot_vals)), float(np.std(boot_vals))
                 rows.append(
                     {
                         "model": "stacking_ensemble",
@@ -151,12 +162,13 @@ def run_training(
                         "metric_in_sample_std_cv": float(cv_scores.std()),
                         "metric_in_sample_mean_bootstrap": boot_mean,
                         "metric_in_sample_std_bootstrap": boot_std,
-                        "metric_out_of_sample": float(out_val) if isinstance(out_val, (float, int, np.floating)) else np.nan,
+                        "metric_out_of_sample": out_val,
                         "all_in_sample_metrics": json.dumps(in_metrics),
                         "all_out_sample_metrics": json.dumps(out_metrics),
                         "best_params": json.dumps({"estimators": stack_names}),
                     }
                 )
+                trained_models["stacking_ensemble"] = stack_model
                 if cv_scores.mean() > best_score:
                     best_score = float(cv_scores.mean())
                     best_model = stack_model
@@ -168,7 +180,7 @@ def run_training(
         progress.progress(min(1.0, current_stage / total))
 
     status.success("Training completed")
-    return rows, failed, best_model, best_name
+    return rows, failed, best_model, best_name, trained_models
 
 
 @st.cache_data(show_spinner=False)
@@ -176,7 +188,6 @@ def _corr_matrix(df: pd.DataFrame) -> pd.DataFrame:
     return df.corr(numeric_only=True)
 
 
-st.header("AI λab — Custom ML")
 tabs = st.tabs(["1) Import & Split", "2) EDA", "3) Feature Engineering", "4) Feature Selection", "5) Modeling", "6) Results", "7) XAI"])
 
 with tabs[0]:
@@ -206,9 +217,9 @@ with tabs[0]:
         st.caption("Model documentation")
         st.json(model_doc(task_type))
         test_size = st.slider("Test size", 0.1, 0.5, 0.2, 0.05, key="custom_test_size")
-        random_state = st.number_input("Random state", 0, 9999, 42, key="custom_random_state")
+        st.caption("Random state is fixed at 42 for reproducibility.")
         if st.button("Create split"):
-            st.session_state.ctx = split_context(st.session_state.raw_df, target, task_type, test_size, int(random_state))
+            st.session_state.ctx = split_context(st.session_state.raw_df, target, task_type, test_size, 42)
 
 if st.session_state.ctx is None:
     st.stop()
@@ -287,8 +298,10 @@ with tabs[4]:
     folds = st.slider("CV folds", 3, 10, 5, key="custom_folds")
     tuning_level = st.select_slider("Optuna tuning level", options=["basic", "light", "medium", "heavy", "extreme"], key="custom_tuning_level")
     imbalance = st.selectbox("Imbalance strategy", ["none", "class_weight", "smote"], key="custom_imbalance") if ctx.task_type == "classification" else "none"
+    available_algorithms = list(model_candidates(ctx.task_type).keys())
+    selected_algorithms = st.multiselect("Algorithms to run", available_algorithms, default=available_algorithms, key="custom_selected_algorithms")
     use_stacking = st.checkbox("Enable stacking ensemble", key="custom_use_stacking")
-    selected_stacking_models = st.multiselect("Stacking base models", list(model_candidates(ctx.task_type).keys()), default=list(model_candidates(ctx.task_type).keys())[:3], key="custom_stacking_models") if use_stacking else []
+    selected_stacking_models = st.multiselect("Stacking base models", available_algorithms, default=available_algorithms[:3], key="custom_stacking_models") if use_stacking else []
 
 
     st.subheader("Training configuration summary")
@@ -306,17 +319,22 @@ with tabs[4]:
         "cv_folds": int(folds),
         "optuna_tuning_level": tuning_level,
         "imbalance_strategy": imbalance,
+        "algorithms_to_run": selected_algorithms,
         "stacking_enabled": bool(use_stacking),
         "stacking_base_models": selected_stacking_models,
     }
     st.json(training_summary)
 
     if st.button("Run modeling"):
-        rows, failed, best_model, best_name = run_training(ctx, metric, folds, tuning_level, imbalance, use_stacking=use_stacking, stacking_base_models=selected_stacking_models)
+        if not selected_algorithms:
+            st.error("Please select at least one algorithm to run.")
+            st.stop()
+        rows, failed, best_model, best_name, trained_models = run_training(ctx, metric, folds, tuning_level, imbalance, model_names=selected_algorithms, use_stacking=use_stacking, stacking_base_models=selected_stacking_models)
         st.session_state.models_summary = pd.DataFrame(rows).sort_values("metric_in_sample_mean_cv", ascending=False)
         st.session_state.best_model = best_model
         st.session_state.best_model_name = best_name
         st.session_state.failed_runs = failed
+        st.session_state.trained_models = trained_models
 
         if failed:
             st.error("Some models failed during training. See diagnostics below.")
@@ -332,6 +350,17 @@ with tabs[5]:
     st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_mean_cv", title="CV Mean"), use_container_width=True)
     st.plotly_chart(px.scatter(st.session_state.models_summary, x="metric_in_sample_mean_cv", y="metric_out_of_sample", text="model", title="In vs Out"), use_container_width=True)
     st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_std_cv", title="CV Std"), use_container_width=True)
+
+    parsed_metrics = st.session_state.models_summary["all_out_sample_metrics"].apply(lambda x: json.loads(x))
+    all_metric_names = sorted({k for d in parsed_metrics for k, v in d.items() if isinstance(v, (int, float))})
+    if all_metric_names:
+        selected_result_metric = st.selectbox("Second results table metric", all_metric_names)
+        metric_rows = []
+        for _, r in st.session_state.models_summary.iterrows():
+            m = json.loads(r["all_out_sample_metrics"]).get(selected_result_metric)
+            metric_rows.append({"model": r["model"], selected_result_metric: m})
+        metric_df = pd.DataFrame(metric_rows).sort_values(selected_result_metric, ascending=False)
+        st.dataframe(metric_df)
 
     details_model = st.selectbox("Model metric details", st.session_state.models_summary["model"].tolist())
     row = st.session_state.models_summary[st.session_state.models_summary["model"] == details_model].iloc[0]
@@ -403,15 +432,25 @@ with tabs[5]:
             prob_df = pd.DataFrame({"probability": probs})
             st.plotly_chart(px.histogram(prob_df, x="probability", nbins=30, title="Predicted probability distribution"), use_container_width=True)
 
-    pipeline_name = st.text_input("Save pipeline as", value="feature_pipeline.joblib")
-    if st.button("Save pipeline"):
-        st.success(f"Saved pipeline to {save_pipeline(st.session_state.feature_pipeline, pipeline_name)}")
+    if st.session_state.ctx.task_type == "regression":
+        y_test = st.session_state.ctx.y_test
+        x_test = st.session_state.selected_features["x_test"]
+        y_pred = st.session_state.best_model.predict(x_test)
+        reg_df = pd.DataFrame({"actual": y_test, "predicted": y_pred})
+        reg_df["residual"] = reg_df["actual"] - reg_df["predicted"]
+        st.plotly_chart(px.scatter(reg_df, x="actual", y="predicted", title="Predicted vs Actual"), use_container_width=True)
+        st.plotly_chart(px.histogram(reg_df, x="residual", nbins=40, title="Residual Distribution"), use_container_width=True)
+        st.plotly_chart(px.scatter(reg_df.reset_index(), x=reg_df.index, y="residual", title="Residuals by Observation"), use_container_width=True)
 
-    model_name = st.text_input("Save model bundle as", value=f"{st.session_state.best_model_name}_bundle.joblib")
-    if st.button("Save model bundle"):
-        st.success(
-            f"Saved bundle to {save_model_bundle(st.session_state.best_model, st.session_state.feature_pipeline, st.session_state.selected_features['selector'], st.session_state.ctx.task_type, get_feature_names(st.session_state.feature_pipeline), model_name)}"
-        )
+    models_to_save = list(st.session_state.get("trained_models", {}).keys())
+    if models_to_save:
+        selected_model_to_save = st.selectbox("Choose model to save (end-to-end bundle)", models_to_save)
+        model_name = st.text_input("Save model bundle as", value=f"{selected_model_to_save}_bundle.joblib")
+        if st.button("Save selected model bundle"):
+            model_obj = st.session_state.trained_models[selected_model_to_save]
+            st.success(
+                f"Saved bundle to {save_model_bundle(model_obj, st.session_state.feature_pipeline, st.session_state.selected_features['selector'], st.session_state.ctx.task_type, get_feature_names(st.session_state.feature_pipeline), model_name)}"
+            )
 
 with tabs[6]:
     feature_names = get_feature_names(st.session_state.feature_pipeline)
@@ -420,7 +459,10 @@ with tabs[6]:
         mask = selector.get_support()
         feature_names = [f for f, keep in zip(feature_names, mask) if keep]
 
-    importance = permutation_importance(st.session_state.best_model, st.session_state.selected_features["x_test"], st.session_state.ctx.y_test, n_repeats=5, random_state=42)
+    x_perm = st.session_state.selected_features["x_test"]
+    if sparse.issparse(x_perm):
+        x_perm = x_perm.toarray()
+    importance = permutation_importance(st.session_state.best_model, x_perm, st.session_state.ctx.y_test, n_repeats=5, random_state=42)
     imp_df = pd.DataFrame({"feature": feature_names, "importance": importance.importances_mean}).sort_values("importance", ascending=False)
     st.plotly_chart(px.bar(imp_df.head(25), x="feature", y="importance", title="Permutation Importance"), use_container_width=True)
 
@@ -433,5 +475,5 @@ with tabs[6]:
 
         top_feature = imp_df.iloc[0]["feature"]
         fig, ax = plt.subplots(figsize=(6, 4))
-        PartialDependenceDisplay.from_estimator(st.session_state.best_model, st.session_state.selected_features["x_test"], [feature_names.index(top_feature)], ax=ax)
+        PartialDependenceDisplay.from_estimator(st.session_state.best_model, x_perm, [feature_names.index(top_feature)], ax=ax)
         st.pyplot(fig)

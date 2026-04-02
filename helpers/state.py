@@ -12,6 +12,7 @@ def initialize_session_state() -> None:
         "best_model_name": None,
         "x_train_ready": None,
         "x_test_ready": None,
+        "trained_models": {},
 
         # Auto ML widget state
         "automl_target": None,
@@ -34,6 +35,7 @@ def initialize_session_state() -> None:
         "custom_imbalance": "none",
         "custom_use_stacking": False,
         "custom_stacking_models": [],
+        "custom_selected_algorithms": [],
         # Predict widget state
         "predict_selected_model": None,
         "predict_use_pipeline": False,

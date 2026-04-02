@@ -107,3 +107,12 @@ streamlit run app.py
 - Logs are stored in `logs/app.log`.
 
 - All major widget selections persist in `st.session_state` (with stable keys) across page/tab navigation.
+
+- Random state is fixed to **42** in training split for reproducibility (no user input).
+- Model saving is now end-to-end via a selected trained model bundle (pipeline+selector+model together).
+
+- Bootstrap mean/std now use the same selected optimization scorer as CV and out-of-sample, preserving scale consistency.
+
+- Auto ML now includes Results and XAI tabs aligned with Custom ML output structure.
+
+- Page routing now uses `st.navigation(..., position="top")` for a persistent top navigation bar.

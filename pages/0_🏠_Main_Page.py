@@ -1,15 +1,12 @@
 import streamlit as st
 
 from helpers.config import IMAGES_DIR, LOGO_PATH
-from helpers.navigation import render_top_navigation
 from helpers.state import initialize_session_state
 from helpers.style import set_app_style
 
 initialize_session_state()
 set_app_style()
-render_top_navigation()
 
-st.header("Welcome to AI λab")
 
 logo_research = IMAGES_DIR / "logo_research_team.svg"
 logo_university = IMAGES_DIR / "logo_university.svg"

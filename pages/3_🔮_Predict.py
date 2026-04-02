@@ -2,15 +2,12 @@ import streamlit as st
 
 from helpers.data_utils import read_uploaded_data
 from helpers.ml_utils import list_saved_models, list_saved_pipelines, load_model_bundle, load_pipeline
-from helpers.navigation import render_top_navigation
 from helpers.state import initialize_session_state
 from helpers.style import set_app_style
 
 initialize_session_state()
 set_app_style()
-render_top_navigation()
 
-st.header("AI λab — Predict")
 model_files = list_saved_models()
 if not model_files:
     st.info("No saved model bundles found")
