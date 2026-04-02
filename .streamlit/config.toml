@@ -1,0 +1,15 @@
+[client]
+showSidebarNavigation = false
+
+[server]
+runOnSave = true
+maxUploadSize = 500
+maxMessageSize = 500
+
+[theme]
+base = "light"
+primaryColor = "#2C6BED"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F6F8FA"
+textColor = "#1F2937"
+font = "sans serif"
