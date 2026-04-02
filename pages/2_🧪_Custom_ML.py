@@ -330,7 +330,20 @@ with tabs[4]:
             st.error("Please select at least one algorithm to run.")
             st.stop()
         rows, failed, best_model, best_name, trained_models = run_training(ctx, metric, folds, tuning_level, imbalance, model_names=selected_algorithms, use_stacking=use_stacking, stacking_base_models=selected_stacking_models)
-        st.session_state.models_summary = pd.DataFrame(rows).sort_values("metric_in_sample_mean_cv", ascending=False)
+        models_summary = pd.DataFrame(rows)
+        if models_summary.empty:
+            st.session_state.models_summary = None
+            st.session_state.best_model = best_model
+            st.session_state.best_model_name = best_name
+            st.session_state.failed_runs = failed
+            st.session_state.trained_models = trained_models
+            st.error("No models completed successfully. Review diagnostics and retry with different settings.")
+            if failed:
+                st.dataframe(pd.DataFrame(failed))
+            st.stop()
+
+        sort_col = "metric_in_sample_mean_cv" if "metric_in_sample_mean_cv" in models_summary.columns else "metric_out_of_sample"
+        st.session_state.models_summary = models_summary.sort_values(sort_col, ascending=False)
         st.session_state.best_model = best_model
         st.session_state.best_model_name = best_name
         st.session_state.failed_runs = failed
@@ -347,27 +360,33 @@ if st.session_state.models_summary is None:
 
 with tabs[5]:
     st.dataframe(st.session_state.models_summary)
-    st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_mean_cv", title="CV Mean"), use_container_width=True)
-    st.plotly_chart(px.scatter(st.session_state.models_summary, x="metric_in_sample_mean_cv", y="metric_out_of_sample", text="model", title="In vs Out"), use_container_width=True)
-    st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_std_cv", title="CV Std"), use_container_width=True)
+    if "metric_in_sample_mean_cv" in st.session_state.models_summary.columns:
+        st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_mean_cv", title="CV Mean"), use_container_width=True)
+    if {"metric_in_sample_mean_cv", "metric_out_of_sample"}.issubset(st.session_state.models_summary.columns):
+        st.plotly_chart(px.scatter(st.session_state.models_summary, x="metric_in_sample_mean_cv", y="metric_out_of_sample", text="model", title="In vs Out"), use_container_width=True)
+    if "metric_in_sample_std_cv" in st.session_state.models_summary.columns:
+        st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_std_cv", title="CV Std"), use_container_width=True)
 
-    parsed_metrics = st.session_state.models_summary["all_out_sample_metrics"].apply(lambda x: json.loads(x))
-    all_metric_names = sorted({k for d in parsed_metrics for k, v in d.items() if isinstance(v, (int, float))})
-    if all_metric_names:
-        selected_result_metric = st.selectbox("Second results table metric", all_metric_names)
-        metric_rows = []
-        for _, r in st.session_state.models_summary.iterrows():
-            m = json.loads(r["all_out_sample_metrics"]).get(selected_result_metric)
-            metric_rows.append({"model": r["model"], selected_result_metric: m})
-        metric_df = pd.DataFrame(metric_rows).sort_values(selected_result_metric, ascending=False)
-        st.dataframe(metric_df)
+    if "all_out_sample_metrics" in st.session_state.models_summary.columns:
+        parsed_metrics = st.session_state.models_summary["all_out_sample_metrics"].apply(lambda x: json.loads(x))
+        all_metric_names = sorted({k for d in parsed_metrics for k, v in d.items() if isinstance(v, (int, float))})
+        if all_metric_names:
+            selected_result_metric = st.selectbox("Second results table metric", all_metric_names)
+            metric_rows = []
+            for _, r in st.session_state.models_summary.iterrows():
+                m = json.loads(r["all_out_sample_metrics"]).get(selected_result_metric)
+                metric_rows.append({"model": r["model"], selected_result_metric: m})
+            metric_df = pd.DataFrame(metric_rows).sort_values(selected_result_metric, ascending=False)
+            st.dataframe(metric_df)
 
     details_model = st.selectbox("Model metric details", st.session_state.models_summary["model"].tolist())
     row = st.session_state.models_summary[st.session_state.models_summary["model"] == details_model].iloc[0]
-    st.write("In-sample metrics")
-    st.json(json.loads(row["all_in_sample_metrics"]))
-    st.write("Out-of-sample metrics")
-    st.json(json.loads(row["all_out_sample_metrics"]))
+    if "all_in_sample_metrics" in row and pd.notna(row["all_in_sample_metrics"]):
+        st.write("In-sample metrics")
+        st.json(json.loads(row["all_in_sample_metrics"]))
+    if "all_out_sample_metrics" in row and pd.notna(row["all_out_sample_metrics"]):
+        st.write("Out-of-sample metrics")
+        st.json(json.loads(row["all_out_sample_metrics"]))
 
     if st.session_state.ctx.task_type == "classification":
         import matplotlib.pyplot as plt
