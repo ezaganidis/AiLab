@@ -282,3 +282,84 @@ def list_saved_models() -> list[str]:
 
 def summary_metric_name(task_type: str) -> str:
     return "f1_weighted" if task_type == "classification" else "rmse"
+
+
+def model_doc(task_type: str) -> dict:
+    task = task_type.lower()
+    if task == "classification":
+        return {
+            "Dummy (most frequent)": "- Baseline: predicts the most frequent class.",
+            "Logistic regression": "- Linear classifier; outputs probabilities; strong baseline.",
+            "Random forest": "- Bagging of trees; robust non-linear model.",
+            "Extra trees": "- Like RF with extra randomness; often strong + fast.",
+            "Gradient boosting": "- Sequential trees to correct errors; can overfit.",
+            "Histogram gradient boosting": "- Efficient boosting with binning; good on larger data.",
+            "SVM (RBF)": "- Non-linear margin classifier (RBF). Scaling matters.",
+            "SVM (Linear)": "- Linear margin classifier; good for high-dimensional data.",
+            "SVM (Poly)": "- Polynomial kernel; can be slower.",
+            "K-nearest neighbors": "- Local voting; sensitive to scaling/noise.",
+            "Neural net (MLP)": "- Feed-forward network; flexible but tune carefully.",
+        }
+
+    return {
+        "Dummy (mean)": "- Baseline: always predicts the mean of the target.",
+        "Linear regression": "- Linear baseline; minimizes squared error.",
+        "Ridge regression": "- L2 shrinkage; helps multicollinearity.",
+        "Lasso regression": "- L1 shrinkage; can zero out coefficients (feature selection).",
+        "Elastic net": "- L1+L2; stable with correlated features.",
+        "Random forest": "- Averaged trees; strong non-linear baseline.",
+        "Extra trees": "- Randomized trees; often strong and fast.",
+        "Gradient boosting": "- Sequential trees reduce residuals; tune carefully.",
+        "Histogram gradient boosting": "- Efficient boosting; good on larger data.",
+        "SVR (RBF)": "- Non-linear regression; scaling matters.",
+        "SVR (Linear)": "- Linear SVR; simpler + faster.",
+        "SVR (Poly)": "- Polynomial SVR; can model curvature.",
+        "K-nearest neighbors": "- Local averaging; sensitive to scaling/noise.",
+        "Neural net (MLP)": "- Feed-forward regressor; tune carefully.",
+    }
+
+
+def param_grids(task_type: str, model_name: str):
+    if task_type.lower() == "classification":
+        grids = {
+            "Logistic regression": {
+                "Light": {"model__C": [0.1, 1, 10]},
+                "Medium": {"model__C": [0.01, 0.1, 1, 10], "model__solver": ["lbfgs", "liblinear"]},
+                "Heavy": {"model__C": [0.001, 0.01, 0.1, 1, 10, 100], "model__solver": ["lbfgs", "liblinear"]},
+            },
+            "Random forest": {
+                "Light": {"model__n_estimators": [200, 400]},
+                "Medium": {"model__n_estimators": [200, 400], "model__max_depth": [None, 10, 20]},
+                "Heavy": {
+                    "model__n_estimators": [200, 400],
+                    "model__max_depth": [None, 10, 20],
+                    "model__min_samples_split": [2, 5],
+                    "model__min_samples_leaf": [1, 2],
+                },
+            },
+            "Extra trees": {
+                "Light": {"model__n_estimators": [300, 500]},
+                "Medium": {"model__n_estimators": [300, 500], "model__max_depth": [None, 10, 20]},
+                "Heavy": {
+                    "model__n_estimators": [300, 500],
+                    "model__max_depth": [None, 10, 20],
+                    "model__min_samples_split": [2, 5],
+                    "model__min_samples_leaf": [1, 2],
+                },
+            },
+        }
+        return grids.get(model_name, {"Light": {}, "Medium": {}, "Heavy": {}})
+
+    grids = {
+        "Ridge regression": {
+            "Light": {"model__alpha": [0.1, 1, 10]},
+            "Medium": {"model__alpha": [0.01, 0.1, 1, 10, 100]},
+            "Heavy": {"model__alpha": [0.001, 0.01, 0.1, 1, 10, 100]},
+        },
+        "Lasso regression": {
+            "Light": {"model__alpha": [0.001, 0.01, 0.1]},
+            "Medium": {"model__alpha": [0.0005, 0.001, 0.01, 0.1]},
+            "Heavy": {"model__alpha": [0.0001, 0.0005, 0.001, 0.01, 0.1]},
+        },
+    }
+    return grids.get(model_name, {"Light": {}, "Medium": {}, "Heavy": {}})

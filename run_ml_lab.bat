@@ -48,7 +48,7 @@ if "%CONDA_BAT%"=="" (
 if "%CONDA_BAT%"=="" (
   echo.
   echo ERROR: Conda was not found automatically.
-  set /p CONDA_ROOT=Anaconda/Miniconda install folder: 
+  set /p CONDA_ROOT=Anaconda/Miniconda install folder:
   set "CONDA_ROOT=%CONDA_ROOT:"=%"
   if exist "%CONDA_ROOT%\condabin\conda.bat" (
     set "CONDA_BAT=%CONDA_ROOT%\condabin\conda.bat"
@@ -63,27 +63,61 @@ echo.
 echo Using conda:
 echo   %CONDA_BAT%
 
+for /f "delims=" %%i in ('call "%CONDA_BAT%" info --base 2^>nul') do set "CONDA_BASE=%%i"
+set "ENV_DIR=%CONDA_BASE%\envs\%ENV_NAME%"
+
+echo.
+echo Pre-flight cleanup...
+echo - Closing possible running Streamlit processes
+for %%P in (streamlit.exe python.exe pythonw.exe) do taskkill /F /IM %%P >nul 2>nul
+
+echo - Removing stale pip temp launchers (if any)
+if exist "%ENV_DIR%\Scripts\streamlit.exe.deleteme" del /f /q "%ENV_DIR%\Scripts\streamlit.exe.deleteme" >nul 2>nul
+if exist "%ENV_DIR%\Lib\site-packages\~treamlit" rmdir /s /q "%ENV_DIR%\Lib\site-packages\~treamlit" >nul 2>nul
+for /d %%D in ("%ENV_DIR%\Lib\site-packages\~treamlit*") do rmdir /s /q "%%~fD" >nul 2>nul
+
+timeout /t 1 >nul
+
 set "ENV_EXISTS=0"
 for /f "delims=" %%i in ('call "%CONDA_BAT%" env list 2^>nul ^| findstr /i /r "^[ ]*%ENV_NAME%[ ]"') do (
   set "ENV_EXISTS=1"
 )
 
+set "ENV_OK=0"
 if "%ENV_EXISTS%"=="0" (
   echo Creating conda env "%ENV_NAME%"...
   call "%CONDA_BAT%" env create -n "%ENV_NAME%" -f "%ENV_FILE%"
   if errorlevel 1 (
-    echo ERROR: Failed to create environment.
-    pause
-    exit /b 1
+    echo WARNING: Initial create failed. Retrying after cleanup...
+    for %%P in (streamlit.exe python.exe pythonw.exe) do taskkill /F /IM %%P >nul 2>nul
+    if exist "%ENV_DIR%\Scripts\streamlit.exe" del /f /q "%ENV_DIR%\Scripts\streamlit.exe" >nul 2>nul
+    if exist "%ENV_DIR%\Lib\site-packages\~treamlit" rmdir /s /q "%ENV_DIR%\Lib\site-packages\~treamlit" >nul 2>nul
+    call "%CONDA_BAT%" env update -n "%ENV_NAME%" -f "%ENV_FILE%" --prune
+    if errorlevel 1 (
+      echo ERROR: Failed to create/update environment after retry.
+      echo Suggestion: close IDE/terminal using this env and rerun this .bat.
+      pause
+      exit /b 1
+    )
   )
+  set "ENV_OK=1"
 ) else (
   echo Updating conda env "%ENV_NAME%"...
   call "%CONDA_BAT%" env update -n "%ENV_NAME%" -f "%ENV_FILE%" --prune
   if errorlevel 1 (
-    echo ERROR: Failed to update environment.
-    pause
-    exit /b 1
+    echo WARNING: Update failed. Retrying after cleanup...
+    for %%P in (streamlit.exe python.exe pythonw.exe) do taskkill /F /IM %%P >nul 2>nul
+    if exist "%ENV_DIR%\Scripts\streamlit.exe" del /f /q "%ENV_DIR%\Scripts\streamlit.exe" >nul 2>nul
+    if exist "%ENV_DIR%\Lib\site-packages\~treamlit" rmdir /s /q "%ENV_DIR%\Lib\site-packages\~treamlit" >nul 2>nul
+    call "%CONDA_BAT%" env update -n "%ENV_NAME%" -f "%ENV_FILE%" --prune
+    if errorlevel 1 (
+      echo ERROR: Failed to update environment after retry.
+      echo Suggestion: run ^"conda remove -n %ENV_NAME% --all^" then rerun this .bat.
+      pause
+      exit /b 1
+    )
   )
+  set "ENV_OK=1"
 )
 
 echo Activating env "%ENV_NAME%" ...
@@ -98,6 +132,7 @@ python --version
 python -c "import streamlit; print('streamlit', streamlit.__version__)" 1>nul 2>nul
 if errorlevel 1 (
   echo ERROR: Streamlit is not installed in this environment.
+  echo Check requirements.txt / environment.yml.
   pause
   exit /b 1
 )

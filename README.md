@@ -60,3 +60,42 @@ streamlit run app.py
 ## Classification label-specific metrics
 
 In **Custom ML → Results**, when task is classification, you can select a label (from available target labels) and inspect label-specific precision/recall/F1 for in-sample and out-of-sample predictions.
+
+
+### If you see WinError 32 / invalid distribution `~treamlit`
+
+The updated `run_ml_lab.bat` now:
+- closes running `streamlit.exe` / `python.exe` processes,
+- removes stale `streamlit.exe.deleteme` and `~treamlit*` leftovers,
+- retries environment creation/update once automatically.
+
+If it still fails, close all terminals/IDEs using the env and run:
+
+```bat
+conda remove -n streamlit_app_duth --all
+```
+
+Then run `run_ml_lab.bat` again.
+
+
+## How to start correctly
+
+Run from the project root (same folder that contains `app.py`, `helpers/`, and `pages/`):
+
+```bash
+cd /path/to/Manos
+streamlit run app.py
+```
+
+`app.py` is the entrypoint and now includes direct page links to all modules when sidebar navigation is disabled.
+
+
+## New modeling controls
+
+- Classification probability outputs are shown when `predict_proba` is available.
+- Decision-threshold tuning is supported with threshold curves (precision/recall/F1).
+- Confusion matrix normalization is user-selectable (`none`, `true`, `pred`, `all`).
+- Optional stacking ensemble can be enabled from the modeling tab.
+
+
+- Training configuration summary is shown in both Auto ML and Custom ML before running, so users can inspect model characteristics and settings.
