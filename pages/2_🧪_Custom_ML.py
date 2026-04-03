@@ -516,14 +516,13 @@ with tabs[6]:
                 f"Saved bundle to {save_model_bundle(model_obj, st.session_state.feature_pipeline, st.session_state.selected_features['selector'], st.session_state.ctx.task_type, get_feature_names(st.session_state.feature_pipeline), model_name)}"
             )
 
-current_tab = st.session_state.get("custom_tab_selector", tab_labels[0])
-current_idx = tab_labels.index(current_tab) if current_tab in tab_labels else 0
-prev_col, next_col = st.columns(2)
-with prev_col:
+current_idx = tab_labels.index(st.session_state.get("custom_tab_selected", tab_labels[0]))
+nav_cols = st.columns([1, 8, 1])
+with nav_cols[0]:
     if st.button("⬅️ Previous tab", disabled=current_idx == 0, key="custom_prev_tab"):
         st.session_state.custom_tab_selected = tab_labels[current_idx - 1]
         st.rerun()
-with next_col:
+with nav_cols[2]:
     if st.button("Next tab ➡️", disabled=current_idx >= len(tab_labels) - 1, key="custom_next_tab"):
         st.session_state.custom_tab_selected = tab_labels[current_idx + 1]
         st.rerun()
