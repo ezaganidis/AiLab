@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <rect width="320" height="320" fill="white"/>
+  <circle cx="160" cy="160" r="90" fill="none" stroke="#0E1E34" stroke-width="12"/>
+  <text x="62" y="175" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" fill="#0E1E34">UNI</text>
+</svg>
