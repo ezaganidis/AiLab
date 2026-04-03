@@ -14,13 +14,11 @@ from sklearn.metrics import (ConfusionMatrixDisplay, f1_score, get_scorer, preci
                              roc_curve)
 from sklearn.model_selection import cross_val_score
 
-from helpers.config import PIPELINES_DIR
 from helpers.data_utils import read_sql_data, read_uploaded_data, split_context
 from helpers.logging_utils import setup_logger
 from helpers.ml_utils import (apply_smote_if_needed, available_scorers, build_feature_pipeline, cv_object,
-                              evaluate_metrics, feature_select, get_feature_names, list_saved_pipelines,
-                              load_pipeline, model_candidates, model_doc, objective_factory, param_grids,
-                              save_model_bundle, save_pipeline, tuning_trials)
+                              evaluate_metrics, feature_select, get_feature_names, model_candidates, model_doc,
+                              objective_factory, param_grids, save_model_bundle, tuning_trials)
 from helpers.state import initialize_session_state
 from helpers.style import set_app_style
 
@@ -188,7 +186,10 @@ def _corr_matrix(df: pd.DataFrame) -> pd.DataFrame:
     return df.corr(numeric_only=True)
 
 
-tabs = st.tabs(["1) Import & Split", "2) EDA", "3) Feature Engineering", "4) Feature Selection", "5) Modeling", "6) Results", "7) XAI"])
+tab_labels = ["1) Import & Split", "2) EDA", "3) Feature Engineering", "4) Feature Selection", "5) Modeling", "6) Results", "7) XAI"]
+if "custom_tab_selected" not in st.session_state:
+    st.session_state.custom_tab_selected = tab_labels[0]
+tabs = st.tabs(tab_labels, default=st.session_state.custom_tab_selected, key="custom_tab_selector")
 
 with tabs[0]:
     source = st.radio("Data source", ["Upload file", "SQL query"], horizontal=True, key="custom_source")
@@ -212,6 +213,31 @@ with tabs[0]:
 
     if st.session_state.raw_df is not None:
         st.dataframe(st.session_state.raw_df.head(100))
+        st.markdown("### Column type enforcement")
+        type_options = ["categorical", "numerical", "date"]
+        inferred_types = {}
+        for col in st.session_state.raw_df.columns:
+            if pd.api.types.is_numeric_dtype(st.session_state.raw_df[col]):
+                inferred_types[col] = "numerical"
+            elif pd.api.types.is_datetime64_any_dtype(st.session_state.raw_df[col]):
+                inferred_types[col] = "date"
+            else:
+                inferred_types[col] = "categorical"
+        if "custom_col_types" not in st.session_state:
+            st.session_state.custom_col_types = inferred_types.copy()
+
+        type_rows = []
+        for col in st.session_state.raw_df.columns:
+            enforced_type = st.selectbox(
+                f"Type for column: {col}",
+                type_options,
+                index=type_options.index(st.session_state.custom_col_types.get(col, inferred_types[col])),
+                key=f"custom_col_type_{col}",
+            )
+            st.session_state.custom_col_types[col] = enforced_type
+            type_rows.append({"column": col, "type": enforced_type})
+        st.dataframe(pd.DataFrame(type_rows), use_container_width=True)
+
         target = st.selectbox("Target", st.session_state.raw_df.columns.tolist(), key="custom_target")
         task_type = st.selectbox("Task type", ["classification", "regression"], key="custom_task_type")
         st.caption("Model documentation")
@@ -219,7 +245,16 @@ with tabs[0]:
         test_size = st.slider("Test size", 0.1, 0.5, 0.2, 0.05, key="custom_test_size")
         st.caption("Random state is fixed at 42 for reproducibility.")
         if st.button("Create split"):
-            st.session_state.ctx = split_context(st.session_state.raw_df, target, task_type, test_size, 42)
+            enforced_df = st.session_state.raw_df.copy()
+            for col, dtype_name in st.session_state.custom_col_types.items():
+                if dtype_name == "numerical":
+                    enforced_df[col] = pd.to_numeric(enforced_df[col], errors="coerce")
+                elif dtype_name == "date":
+                    enforced_df[col] = pd.to_datetime(enforced_df[col], errors="coerce")
+                else:
+                    enforced_df[col] = enforced_df[col].astype("string")
+            st.session_state.raw_df = enforced_df
+            st.session_state.ctx = split_context(enforced_df, target, task_type, test_size, 42)
 
 if st.session_state.ctx is None:
     st.stop()
@@ -237,35 +272,18 @@ with tabs[1]:
 
 with tabs[2]:
     st.subheader("Feature pipeline")
-    existing_pipelines = list_saved_pipelines()
-    mode = st.radio("Pipeline option", ["Create new pipeline", "Load existing pipeline"], horizontal=True)
-    if mode == "Create new pipeline":
-        num_fill = st.selectbox("Numeric NA strategy", ["mean", "median"], key="custom_num_fill")
-        cat_fill = st.selectbox("Categorical NA strategy", ["most_frequent", "constant"], key="custom_cat_fill")
-        scaler = st.selectbox("Scaling", ["standard", "robust"], key="custom_scaler")
-        if st.button("Build transformations"):
-            ctx = st.session_state.ctx
-            pipeline = build_feature_pipeline(ctx.train_df[ctx.feature_cols], scaler, cat_fill, num_fill)
-            x_train = pipeline.fit_transform(ctx.train_df[ctx.feature_cols], ctx.y_train)
-            x_test = pipeline.transform(ctx.test_df[ctx.feature_cols])
-            st.session_state.feature_pipeline = pipeline
-            st.session_state.x_train_ready = x_train
-            st.session_state.x_test_ready = x_test
-            st.success("Pipeline trained on train and applied on test")
-    else:
-        if not existing_pipelines:
-            st.info(f"No pipeline found in {PIPELINES_DIR}")
-        else:
-            selected_pipeline = st.selectbox("Saved pipeline", existing_pipelines)
-            if st.button("Load pipeline"):
-                ctx = st.session_state.ctx
-                pipeline = load_pipeline(selected_pipeline)
-                x_train = pipeline.transform(ctx.train_df[ctx.feature_cols])
-                x_test = pipeline.transform(ctx.test_df[ctx.feature_cols])
-                st.session_state.feature_pipeline = pipeline
-                st.session_state.x_train_ready = x_train
-                st.session_state.x_test_ready = x_test
-                st.success(f"Loaded pipeline: {selected_pipeline}")
+    num_fill = st.selectbox("Numeric NA strategy", ["mean", "median"], key="custom_num_fill")
+    cat_fill = st.selectbox("Categorical NA strategy", ["most_frequent", "constant"], key="custom_cat_fill")
+    scaler = st.selectbox("Scaling", ["standard", "robust"], key="custom_scaler")
+    if st.button("Build transformations"):
+        ctx = st.session_state.ctx
+        pipeline = build_feature_pipeline(ctx.train_df[ctx.feature_cols], scaler, cat_fill, num_fill)
+        x_train = pipeline.fit_transform(ctx.train_df[ctx.feature_cols], ctx.y_train)
+        x_test = pipeline.transform(ctx.test_df[ctx.feature_cols])
+        st.session_state.feature_pipeline = pipeline
+        st.session_state.x_train_ready = x_train
+        st.session_state.x_test_ready = x_test
+        st.success("Pipeline trained on train and applied on test")
 
 if st.session_state.feature_pipeline is None:
     st.stop()
@@ -461,16 +479,6 @@ with tabs[5]:
         st.plotly_chart(px.histogram(reg_df, x="residual", nbins=40, title="Residual Distribution"), use_container_width=True)
         st.plotly_chart(px.scatter(reg_df.reset_index(), x=reg_df.index, y="residual", title="Residuals by Observation"), use_container_width=True)
 
-    models_to_save = list(st.session_state.get("trained_models", {}).keys())
-    if models_to_save:
-        selected_model_to_save = st.selectbox("Choose model to save (end-to-end bundle)", models_to_save)
-        model_name = st.text_input("Save model bundle as", value=f"{selected_model_to_save}_bundle.joblib")
-        if st.button("Save selected model bundle"):
-            model_obj = st.session_state.trained_models[selected_model_to_save]
-            st.success(
-                f"Saved bundle to {save_model_bundle(model_obj, st.session_state.feature_pipeline, st.session_state.selected_features['selector'], st.session_state.ctx.task_type, get_feature_names(st.session_state.feature_pipeline), model_name)}"
-            )
-
 with tabs[6]:
     feature_names = get_feature_names(st.session_state.feature_pipeline)
     selector = st.session_state.selected_features["selector"]
@@ -496,3 +504,26 @@ with tabs[6]:
         fig, ax = plt.subplots(figsize=(6, 4))
         PartialDependenceDisplay.from_estimator(st.session_state.best_model, x_perm, [feature_names.index(top_feature)], ax=ax)
         st.pyplot(fig)
+
+    st.markdown("### Final step: Save complete model bundle")
+    models_to_save = list(st.session_state.get("trained_models", {}).keys())
+    if models_to_save:
+        selected_model_to_save = st.selectbox("Choose model to save (end-to-end bundle)", models_to_save)
+        model_name = st.text_input("Save model bundle as", value=f"{selected_model_to_save}_bundle.joblib")
+        if st.button("Save selected model bundle"):
+            model_obj = st.session_state.trained_models[selected_model_to_save]
+            st.success(
+                f"Saved bundle to {save_model_bundle(model_obj, st.session_state.feature_pipeline, st.session_state.selected_features['selector'], st.session_state.ctx.task_type, get_feature_names(st.session_state.feature_pipeline), model_name)}"
+            )
+
+current_tab = st.session_state.get("custom_tab_selector", tab_labels[0])
+current_idx = tab_labels.index(current_tab) if current_tab in tab_labels else 0
+prev_col, next_col = st.columns(2)
+with prev_col:
+    if st.button("⬅️ Previous tab", disabled=current_idx == 0, key="custom_prev_tab"):
+        st.session_state.custom_tab_selected = tab_labels[current_idx - 1]
+        st.rerun()
+with next_col:
+    if st.button("Next tab ➡️", disabled=current_idx >= len(tab_labels) - 1, key="custom_next_tab"):
+        st.session_state.custom_tab_selected = tab_labels[current_idx + 1]
+        st.rerun()

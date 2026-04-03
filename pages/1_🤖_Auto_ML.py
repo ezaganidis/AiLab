@@ -30,7 +30,10 @@ for key in ["automl_summary", "automl_model", "automl_pipeline", "automl_ctx", "
         st.session_state[key] = None
 
 st.subheader("Auto ML")
-tabs = st.tabs(["1) Import & Setup", "2) Modeling", "3) Results", "4) XAI"])
+tab_labels = ["1) Import & Setup", "2) Modeling", "3) Results", "4) XAI"]
+if "automl_tab_selected" not in st.session_state:
+    st.session_state.automl_tab_selected = tab_labels[0]
+tabs = st.tabs(tab_labels, default=st.session_state.automl_tab_selected, key="automl_tab_selector")
 
 with tabs[0]:
     uploaded = st.file_uploader("Upload csv/json/xlsx", type=["csv", "json", "xlsx"], key="automl_upload")
@@ -206,3 +209,15 @@ with tabs[3]:
                 exp = explainer.explain_instance(x_test[explain_idx], st.session_state.automl_model.predict)
             lime_df = pd.DataFrame(exp.as_list(), columns=["feature", "weight"])
             st.dataframe(lime_df)
+
+current_tab = st.session_state.get("automl_tab_selector", tab_labels[0])
+current_idx = tab_labels.index(current_tab) if current_tab in tab_labels else 0
+c_prev, c_next = st.columns(2)
+with c_prev:
+    if st.button("⬅️ Previous tab", disabled=current_idx == 0, key="automl_prev_tab"):
+        st.session_state.automl_tab_selected = tab_labels[current_idx - 1]
+        st.rerun()
+with c_next:
+    if st.button("Next tab ➡️", disabled=current_idx >= len(tab_labels) - 1, key="automl_next_tab"):
+        st.session_state.automl_tab_selected = tab_labels[current_idx + 1]
+        st.rerun()
