@@ -143,9 +143,9 @@ with tabs[2]:
         st.dataframe(summary)
         st.dataframe(st.session_state.automl_metric_table)
 
-        st.plotly_chart(px.bar(summary, x="model", y="metric_in_sample_mean_cv", title="CV Mean"), use_container_width=True)
-        st.plotly_chart(px.bar(summary, x="model", y="metric_in_sample_mean_bootstrap", title="Bootstrap Mean"), use_container_width=True)
-        st.plotly_chart(px.bar(summary, x="model", y="metric_out_of_sample", title="Out-of-sample"), use_container_width=True)
+        st.plotly_chart(px.bar(summary, x="model", y="metric_in_sample_mean_cv", title="CV Mean"), width="stretch")
+        st.plotly_chart(px.bar(summary, x="model", y="metric_in_sample_mean_bootstrap", title="Bootstrap Mean"), width="stretch")
+        st.plotly_chart(px.bar(summary, x="model", y="metric_out_of_sample", title="Out-of-sample"), width="stretch")
 
         if st.session_state.automl_ctx.task_type == "classification":
             import matplotlib.pyplot as plt
@@ -178,7 +178,7 @@ with tabs[3]:
         with left:
             st.dataframe(imp_df.head(25))
         with right:
-            st.plotly_chart(px.bar(imp_df.head(25), x="feature", y="importance", title="Permutation Importance"), use_container_width=True)
+            st.plotly_chart(px.bar(imp_df.head(25), x="feature", y="importance", title="Permutation Importance"), width="stretch")
 
         pdp_features = st.multiselect("Columns for PDP", feature_names, default=feature_names[:1])
         if pdp_features:
@@ -196,7 +196,7 @@ with tabs[3]:
             shap_importance = np.abs(shap_values.values).mean(axis=0)
             shap_df = pd.DataFrame({"feature": feature_names, "mean_abs_shap": shap_importance}).sort_values("mean_abs_shap", ascending=False)
             st.dataframe(shap_df.head(25))
-            st.plotly_chart(px.bar(shap_df.head(25), x="feature", y="mean_abs_shap", title="SHAP Importance"), use_container_width=True)
+            st.plotly_chart(px.bar(shap_df.head(25), x="feature", y="mean_abs_shap", title="SHAP Importance"), width="stretch")
 
         if HAS_LIME:
             st.markdown("#### LIME")

@@ -236,7 +236,7 @@ with tabs[0]:
             )
             st.session_state.custom_col_types[col] = enforced_type
             type_rows.append({"column": col, "type": enforced_type})
-        st.dataframe(pd.DataFrame(type_rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(type_rows), width="stretch")
 
         target = st.selectbox("Target", st.session_state.raw_df.columns.tolist(), key="custom_target")
         task_type = st.selectbox("Task type", ["classification", "regression"], key="custom_task_type")
@@ -263,12 +263,12 @@ with tabs[1]:
     st.dataframe(st.session_state.ctx.train_df.describe(include="all").transpose())
     na_pct = st.session_state.ctx.train_df.isna().mean().mul(100).sort_values(ascending=False).reset_index()
     na_pct.columns = ["feature", "na_pct"]
-    st.plotly_chart(px.bar(na_pct, x="feature", y="na_pct", title="Missing values (%)"), use_container_width=True)
+    st.plotly_chart(px.bar(na_pct, x="feature", y="na_pct", title="Missing values (%)"), width="stretch")
 
     numeric_cols = st.session_state.ctx.train_df.select_dtypes(include=np.number).columns.tolist()
     if len(numeric_cols) > 1:
         corr = _corr_matrix(st.session_state.ctx.train_df[numeric_cols])
-        st.plotly_chart(px.imshow(corr, text_auto=True, title="Correlation matrix"), use_container_width=True)
+        st.plotly_chart(px.imshow(corr, text_auto=True, title="Correlation matrix"), width="stretch")
 
 with tabs[2]:
     st.subheader("Feature pipeline")
@@ -379,11 +379,11 @@ if st.session_state.models_summary is None:
 with tabs[5]:
     st.dataframe(st.session_state.models_summary)
     if "metric_in_sample_mean_cv" in st.session_state.models_summary.columns:
-        st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_mean_cv", title="CV Mean"), use_container_width=True)
+        st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_mean_cv", title="CV Mean"), width="stretch")
     if {"metric_in_sample_mean_cv", "metric_out_of_sample"}.issubset(st.session_state.models_summary.columns):
-        st.plotly_chart(px.scatter(st.session_state.models_summary, x="metric_in_sample_mean_cv", y="metric_out_of_sample", text="model", title="In vs Out"), use_container_width=True)
+        st.plotly_chart(px.scatter(st.session_state.models_summary, x="metric_in_sample_mean_cv", y="metric_out_of_sample", text="model", title="In vs Out"), width="stretch")
     if "metric_in_sample_std_cv" in st.session_state.models_summary.columns:
-        st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_std_cv", title="CV Std"), use_container_width=True)
+        st.plotly_chart(px.bar(st.session_state.models_summary, x="model", y="metric_in_sample_std_cv", title="CV Std"), width="stretch")
 
     if "all_out_sample_metrics" in st.session_state.models_summary.columns:
         parsed_metrics = st.session_state.models_summary["all_out_sample_metrics"].apply(lambda x: json.loads(x))
@@ -462,12 +462,12 @@ with tabs[5]:
                     "f1": [f1_score(y_test, (probs >= t).astype(int), zero_division=0) for t in thresholds],
                 }
             )
-            st.plotly_chart(px.line(curve, x="threshold", y=["precision", "recall", "f1"], title="Threshold tuning curves"), use_container_width=True)
+            st.plotly_chart(px.line(curve, x="threshold", y=["precision", "recall", "f1"], title="Threshold tuning curves"), width="stretch")
             fpr, tpr, _ = roc_curve(y_test, probs)
             roc_df = pd.DataFrame({"fpr": fpr, "tpr": tpr})
-            st.plotly_chart(px.line(roc_df, x="fpr", y="tpr", title="ROC Curve"), use_container_width=True)
+            st.plotly_chart(px.line(roc_df, x="fpr", y="tpr", title="ROC Curve"), width="stretch")
             prob_df = pd.DataFrame({"probability": probs})
-            st.plotly_chart(px.histogram(prob_df, x="probability", nbins=30, title="Predicted probability distribution"), use_container_width=True)
+            st.plotly_chart(px.histogram(prob_df, x="probability", nbins=30, title="Predicted probability distribution"), width="stretch")
 
     if st.session_state.ctx.task_type == "regression":
         y_test = st.session_state.ctx.y_test
@@ -475,9 +475,9 @@ with tabs[5]:
         y_pred = st.session_state.best_model.predict(x_test)
         reg_df = pd.DataFrame({"actual": y_test, "predicted": y_pred})
         reg_df["residual"] = reg_df["actual"] - reg_df["predicted"]
-        st.plotly_chart(px.scatter(reg_df, x="actual", y="predicted", title="Predicted vs Actual"), use_container_width=True)
-        st.plotly_chart(px.histogram(reg_df, x="residual", nbins=40, title="Residual Distribution"), use_container_width=True)
-        st.plotly_chart(px.scatter(reg_df.reset_index(), x=reg_df.index, y="residual", title="Residuals by Observation"), use_container_width=True)
+        st.plotly_chart(px.scatter(reg_df, x="actual", y="predicted", title="Predicted vs Actual"), width="stretch")
+        st.plotly_chart(px.histogram(reg_df, x="residual", nbins=40, title="Residual Distribution"), width="stretch")
+        st.plotly_chart(px.scatter(reg_df.reset_index(), x=reg_df.index, y="residual", title="Residuals by Observation"), width="stretch")
 
 with tabs[6]:
     feature_names = get_feature_names(st.session_state.feature_pipeline)
@@ -491,11 +491,11 @@ with tabs[6]:
         x_perm = x_perm.toarray()
     importance = permutation_importance(st.session_state.best_model, x_perm, st.session_state.ctx.y_test, n_repeats=5, random_state=42)
     imp_df = pd.DataFrame({"feature": feature_names, "importance": importance.importances_mean}).sort_values("importance", ascending=False)
-    st.plotly_chart(px.bar(imp_df.head(25), x="feature", y="importance", title="Permutation Importance"), use_container_width=True)
+    st.plotly_chart(px.bar(imp_df.head(25), x="feature", y="importance", title="Permutation Importance"), width="stretch")
 
     if hasattr(st.session_state.best_model, "feature_importances_"):
         native = pd.DataFrame({"feature": feature_names, "importance": st.session_state.best_model.feature_importances_}).sort_values("importance", ascending=False)
-        st.plotly_chart(px.bar(native.head(25), x="feature", y="importance", title="Model Feature Importance"), use_container_width=True)
+        st.plotly_chart(px.bar(native.head(25), x="feature", y="importance", title="Model Feature Importance"), width="stretch")
 
     if not imp_df.empty:
         import matplotlib.pyplot as plt

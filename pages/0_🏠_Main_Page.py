@@ -17,10 +17,10 @@ with c_logo1:
         st.image(str(LOGO_PATH), caption="App Logo", width=170)
 with c_logo2:
     if logo_research.exists():
-        st.image(str(logo_research), caption="Research Team Logo", use_container_width=True)
+        st.image(str(logo_research), caption="Research Team Logo", width="stretch")
 with c_logo3:
     if logo_university.exists():
-        st.image(str(logo_university), caption="University Logo", use_container_width=True)
+        st.image(str(logo_university), caption="University Logo", width="stretch")
 
 c1, c2, c3, c4 = st.columns(4)
 
